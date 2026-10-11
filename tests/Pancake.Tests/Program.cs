@@ -1,0 +1,201 @@
+using System.IO.Compression;
+using System.IO.Pipes;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+using Pancake.Core;
+
+var checks = new List<(string Name, Func<Task> Run)>
+{
+    ("Inventory and reversible toggles", Inventory),
+    ("Profile round trip, missing mods and rollback", Profiles),
+    ("Archive traversal and extraction limits", Archives),
+    ("Content import preserves existing mods", ContentImport),
+    ("OBS authentication, fragmented replies and errors", ObsProtocol),
+    ("Companion pipe handshake and round trip", BridgeProtocol)
+};
+var failed = 0;
+foreach (var check in checks)
+{
+    try { await check.Run(); Console.WriteLine("PASS " + check.Name); }
+    catch (Exception ex) { failed++; Console.Error.WriteLine("FAIL " + check.Name + "\n" + ex); }
+}
+Console.WriteLine($"{checks.Count - failed}/{checks.Count} checks passed.");
+return failed == 0 ? 0 : 1;
+
+static void Require(bool value, string message) { if (!value) throw new Exception(message); }
+static void Throws<T>(Action action) where T : Exception
+{
+    try { action(); } catch (T) { return; }
+    throw new Exception("Expected " + typeof(T).Name);
+}
+static string Temp()
+{
+    var path = Path.Combine(Path.GetTempPath(), "PancakeTests-" + Guid.NewGuid());
+    Directory.CreateDirectory(path); return path;
+}
+static ClientSettings Fixture(string root)
+{
+    var game = Path.Combine(root, "game"); var content = Path.Combine(root, "content", "Mods");
+    Directory.CreateDirectory(Path.Combine(game, "Mods")); Directory.CreateDirectory(Path.Combine(game, "Plugins"));
+    Directory.CreateDirectory(Path.Combine(content, "ExampleAvatar"));
+    File.WriteAllText(Path.Combine(game, "Mods", "Example.dll"), "original code");
+    File.WriteAllText(Path.Combine(game, "Plugins", "Loader.dll"), "plugin");
+    File.WriteAllText(Path.Combine(content, "ExampleAvatar", "pallet.json"), "{\"title\":\"Example Avatar\"}");
+    return new() { GameDirectory = game, ContentDirectory = content };
+}
+static Task Inventory()
+{
+    var root = Temp();
+    try
+    {
+        var settings = Fixture(root); var library = new ModLibrary(settings);
+        Require(library.Scan().Count == 3, "Three mod types should be discovered.");
+        foreach (var mod in library.Scan())
+        {
+            library.SetEnabled(mod, false);
+            Require(!library.Scan().Single(x => x.Id == mod.Id).Enabled, "Disabled state missing.");
+            library.SetEnabled(mod, true);
+            Require(library.Scan().Single(x => x.Id == mod.Id).Enabled, "Restore failed.");
+        }
+        Require(File.ReadAllText(Path.Combine(settings.GameDirectory, "Mods", "Example.dll")) == "original code", "Code bytes changed.");
+    }
+    finally { Directory.Delete(root, true); }
+    return Task.CompletedTask;
+}
+static Task Profiles()
+{
+    var root = Temp();
+    try
+    {
+        var settings = Fixture(root); var library = new ModLibrary(settings);
+        var all = library.Capture("All");
+        library.SetEnabled(library.Scan().First(), false);
+        var serialized = Path.Combine(root, "profile.json"); ClientStorage.Write(serialized, all);
+        var loaded = ClientStorage.Read(serialized, () => all);
+        Require(library.Apply(loaded) == 0 && library.Scan().All(x => x.Enabled), "Profile failed to restore states.");
+        var wanted = all with { Mods = new() { new("code/Example.dll", false), new("content/ExampleAvatar", false), new("code/Missing.dll", true) } };
+        Directory.CreateDirectory(settings.ContentDirectory + ".pancake-disabled");
+        File.WriteAllText(settings.ContentDirectory + ".pancake-disabled/ExampleAvatar", "conflict");
+        Throws<IOException>(() => library.Apply(wanted));
+        Require(File.Exists(Path.Combine(settings.GameDirectory, "Mods", "Example.dll")), "Earlier profile change was not rolled back.");
+        File.Delete(settings.ContentDirectory + ".pancake-disabled/ExampleAvatar");
+        Require(library.Apply(wanted) == 1, "Missing mods should be reported.");
+        Require(library.Scan().Single(x => x.Kind == "Plugin").Enabled, "Mods absent from a profile must remain unchanged.");
+    }
+    finally { Directory.Delete(root, true); }
+    return Task.CompletedTask;
+}
+static void Zip(string path, params (string Name, string Text)[] entries)
+{
+    using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+    foreach (var entry in entries) { using var writer = new StreamWriter(archive.CreateEntry(entry.Name).Open()); writer.Write(entry.Text); }
+}
+static Task Archives()
+{
+    var root = Temp();
+    try
+    {
+        foreach (var bad in new[] { "../escape.txt", "..\\escape.txt", "/absolute.txt", "C:/evil.dll", "folder/file:stream" })
+        {
+            var zip = Path.Combine(root, Guid.NewGuid() + ".zip"); Zip(zip, (bad, "bad"));
+            Throws<InvalidDataException>(() => SafeArchive.Extract(zip, Path.Combine(root, Guid.NewGuid().ToString())));
+        }
+        var large = Path.Combine(root, "large.zip"); Zip(large, ("large.txt", new string('x', 100)));
+        Throws<InvalidDataException>(() => SafeArchive.Extract(large, Path.Combine(root, "limited"), 10));
+        var good = Path.Combine(root, "good.zip"); Zip(good, ("folder/file.txt", "ok"));
+        SafeArchive.Extract(good, Path.Combine(root, "good"));
+        Require(File.ReadAllText(Path.Combine(root, "good/folder/file.txt")) == "ok", "Good archive failed.");
+    }
+    finally { Directory.Delete(root, true); }
+    return Task.CompletedTask;
+}
+static Task ContentImport()
+{
+    var root = Temp();
+    try
+    {
+        var settings = Fixture(root);
+        var zip = Path.Combine(root, "avatar.zip"); Zip(zip, ("NewAvatar/pallet.json", "{}"), ("NewAvatar/Windows/avatar.bundle", "asset"));
+        var path = ContentInstaller.Install(zip, settings.ContentDirectory);
+        Require(File.Exists(Path.Combine(path, "pallet.json")), "Content was not installed.");
+        Throws<IOException>(() => ContentInstaller.Install(zip, settings.ContentDirectory));
+        Require(File.ReadAllText(Path.Combine(path, "Windows/avatar.bundle")) == "asset", "Existing mod changed.");
+        var code = Path.Combine(root, "code.zip"); Zip(code, ("Code/pallet.json", "{}"), ("Code/evil.dll", "code"));
+        Throws<InvalidDataException>(() => ContentInstaller.Install(code, settings.ContentDirectory));
+        Require(!Directory.EnumerateDirectories(Path.GetDirectoryName(settings.ContentDirectory)!, ".pancake-stage-*").Any(), "Staging folders leaked.");
+    }
+    finally { Directory.Delete(root, true); }
+    return Task.CompletedTask;
+}
+static async Task<JsonElement> Receive(WebSocket socket)
+{
+    var bytes = new byte[16384]; using var stream = new MemoryStream();
+    WebSocketReceiveResult read;
+    do { read = await socket.ReceiveAsync(new ArraySegment<byte>(bytes), CancellationToken.None); stream.Write(bytes, 0, read.Count); } while (!read.EndOfMessage);
+    using var json = JsonDocument.Parse(stream.ToArray()); return json.RootElement.Clone();
+}
+static async Task Send(WebSocket socket, object message, bool fragmented = false)
+{
+    var bytes = JsonSerializer.SerializeToUtf8Bytes(message);
+    if (fragmented)
+    {
+        var half = bytes.Length / 2;
+        await socket.SendAsync(new ArraySegment<byte>(bytes, 0, half), WebSocketMessageType.Text, false, CancellationToken.None);
+        await socket.SendAsync(new ArraySegment<byte>(bytes, half, bytes.Length - half), WebSocketMessageType.Text, true, CancellationToken.None);
+    }
+    else await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+}
+static async Task ObsProtocol()
+{
+    Require(ObsClient.Authentication("password", "salt", "challenge") == "zTM5ki6L2vVvBQiTG9ckH1Lh64AbnCf6XZ226UmnkIA=", "Authentication formula changed.");
+    var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); var port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
+    using var listener = new HttpListener(); listener.Prefixes.Add($"http://localhost:{port}/"); listener.Start();
+    var server = Task.Run(async () =>
+    {
+        var context = await listener.GetContextAsync(); var web = await context.AcceptWebSocketAsync(null); using var socket = web.WebSocket;
+        await Send(socket, new { op = 0, d = new { rpcVersion = 1, authentication = new { salt = "salt", challenge = "challenge" } } });
+        var identify = await Receive(socket);
+        Require(identify.GetProperty("d").GetProperty("authentication").GetString() == ObsClient.Authentication("password", "salt", "challenge"), "Client sent wrong auth.");
+        await Send(socket, new { op = 2, d = new { negotiatedRpcVersion = 1 } });
+        var one = await Receive(socket); var two = await Receive(socket);
+        // Respond out of order to prove correlation, and fragment one JSON response.
+        foreach (var request in new[] { two, one })
+        {
+            var d = request.GetProperty("d"); var kind = d.GetProperty("requestType").GetString();
+            await Send(socket, new { op = 7, d = new { requestId = d.GetProperty("requestId").GetString(), requestStatus = new { result = kind != "BadRequest", code = kind == "BadRequest" ? 400 : 100, comment = "Test rejection" }, responseData = new { outputActive = true, request = kind } } }, true);
+        }
+        var pending = await Receive(socket);
+        socket.Abort();
+    });
+    await using var client = new ObsClient();
+    await client.ConnectAsync($"ws://localhost:{port}", "password");
+    var good = client.RequestAsync("GetRecordStatus"); var bad = client.RequestAsync("BadRequest");
+    Require((await good).GetProperty("outputActive").GetBoolean(), "Successful response missing.");
+    try { await bad; throw new Exception("OBS rejection was swallowed."); } catch (InvalidOperationException) { }
+    try { await client.RequestAsync("CloseNow"); throw new Exception("Disconnected request succeeded."); } catch (IOException) { }
+    await server.WaitAsync(TimeSpan.FromSeconds(10));
+    listener.Stop();
+}
+static async Task BridgeProtocol()
+{
+    if (!OperatingSystem.IsWindows()) { Console.WriteLine("SKIP pipe ownership test: Windows only"); return; }
+    await using var bridge = new CompanionBridge();
+    var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var received = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+    bridge.ConnectionChanged += value => { if (value) connected.TrySetResult(); };
+    bridge.Message += message => received.TrySetResult(message);
+    bridge.Start();
+    using var client = new NamedPipeClientStream(".", CompanionBridge.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+    await client.ConnectAsync(3000);
+    using var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
+    using var reader = new StreamReader(client, Encoding.UTF8, false, 4096, true);
+    await writer.WriteLineAsync("{\"type\":\"hello\",\"protocol\":1}");
+    await connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+    await writer.WriteLineAsync("{\"type\":\"obs\",\"action\":\"StartRecord\"}");
+    Require((await received.Task.WaitAsync(TimeSpan.FromSeconds(3))).GetProperty("action").GetString() == "StartRecord", "Bridge lost command.");
+    await bridge.SendAsync(new { type = "obsStatus", text = "Recording" });
+    Require((await reader.ReadLineAsync())!.Contains("Recording"), "Bridge lost status response.");
+}

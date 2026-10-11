@@ -1,0 +1,45 @@
+name: Windows build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Test file safety, profiles, OBS and companion IPC
+        run: dotnet run --project tests/Pancake.Tests -c Release
+      - name: Build Windows desktop app
+        run: dotnet build src/Pancake.Desktop -c Release
+      - name: Launch WPF smoke check
+        shell: pwsh
+        run: |
+          $app = Start-Process dotnet -ArgumentList 'src/Pancake.Desktop/bin/Release/net8.0-windows/PancakeClient.dll --smoke-test' -PassThru
+          if (-not $app.WaitForExit(20000)) { $app.Kill(); throw 'Desktop smoke check timed out.' }
+          if ($app.ExitCode -ne 0) { throw "Desktop smoke check failed: $($app.ExitCode)" }
+      - name: Publish portable Windows x64 app
+        run: dotnet publish src/Pancake.Desktop -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o artifacts/PancakeClient-win-x64
+      - name: Include setup guide
+        shell: pwsh
+        run: |
+          Copy-Item docs/SETUP.md artifacts/PancakeClient-win-x64/SETUP.md
+          Copy-Item docs/OBS.md artifacts/PancakeClient-win-x64/OBS.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PancakeClient-win-x64
+          path: artifacts/PancakeClient-win-x64/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PancakeClient-UI-previews
+          path: artifacts/screenshots/
+          if-no-files-found: error

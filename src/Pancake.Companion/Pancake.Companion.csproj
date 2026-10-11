@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>Pancake.Companion</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GameDir Condition="'$(GameDir)' == ''">$(BONELAB_DIR)</GameDir>
+    <EnableDefaultItems>true</EnableDefaultItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="MelonLoader"><HintPath>$(GameDir)/MelonLoader/net6/MelonLoader.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BoneLib"><HintPath>$(GameDir)/Mods/BoneLib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="$(GameDir)/MelonLoader/net6/Il2CppInterop.Runtime.dll"><Private>false</Private></Reference>
+    <Reference Include="$(GameDir)/MelonLoader/Il2CppAssemblies/*.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="CheckGameReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(GameDir)/MelonLoader/net6/MelonLoader.dll')" Text="Set GameDir or BONELAB_DIR to a PC BONELAB installation with MelonLoader's net6 runtime."/>
+    <Error Condition="!Exists('$(GameDir)/Mods/BoneLib.dll')" Text="Install a compatible BoneLib in BONELAB/Mods first."/>
+    <Error Condition="!Exists('$(GameDir)/MelonLoader/Il2CppAssemblies/UnityEngine.CoreModule.dll')" Text="Launch BONELAB once with MelonLoader to generate Il2CppAssemblies, then close the game and rebuild."/>
+  </Target>
+</Project>

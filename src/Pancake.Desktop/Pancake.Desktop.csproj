@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>PancakeClient</AssemblyName>
+    <ApplicationIcon>Assets\pancake.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Pancake.Core\Pancake.Core.csproj" />
+    <Resource Include="Assets\pancake-logo.jpg" />
+    <Resource Include="Assets\pancake.ico" />
+  </ItemGroup>
+</Project>

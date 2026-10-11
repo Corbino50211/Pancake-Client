@@ -1,0 +1,30 @@
+using System.Windows;
+using Pancake.Core;
+
+namespace Pancake.Desktop;
+public partial class App : Application
+{
+    private Mutex? instance;
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        if (e.Args.Contains("--smoke-test"))
+        {
+            StartupUri = null;
+            var window = new MainWindow();
+            window.Show();
+            window.Dispatcher.BeginInvoke(new Action(() => { window.CaptureSmokeScreenshots(); window.Close(); }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            return;
+        }
+        instance = new Mutex(true, "Local\\PancakeClient.Desktop", out var first);
+        if (!first) { MessageBox.Show("Pancake Client is already running."); Shutdown(); return; }
+        DispatcherUnhandledException += (_, args) =>
+        {
+            Directory.CreateDirectory(ClientStorage.Root);
+            File.AppendAllText(Path.Combine(ClientStorage.Root, "errors.log"), $"{DateTime.Now:O} {args.Exception}\n");
+            MessageBox.Show(args.Exception.Message, "Pancake Client", MessageBoxButton.OK, MessageBoxImage.Error);
+            args.Handled = true;
+        };
+        base.OnStartup(e);
+    }
+    protected override void OnExit(ExitEventArgs e) { instance?.Dispose(); base.OnExit(e); }
+}
