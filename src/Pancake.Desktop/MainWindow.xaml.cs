@@ -75,8 +75,9 @@ public partial class MainWindow : Window
         {
             Navigation.SelectedIndex = index;
             UpdateLayout();
-            var bitmap = new RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-            bitmap.Render(this);
+            var body = (FrameworkElement)Content;
+            var bitmap = new RenderTargetBitmap((int)body.ActualWidth, (int)body.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            bitmap.Render(body);
             var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
             using var file = File.Create($"artifacts/screenshots/page-{index}.png"); png.Save(file);
         }

@@ -1,4 +1,4 @@
-<Window x:Class="Pancake.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Pancake Client" Width="1260" Height="850" MinWidth="1000" MinHeight="700" Icon="Assets/pancake-logo.png" WindowStartupLocation="CenterScreen" Loaded="Window_Loaded" Closing="Window_Closing">
+<Window x:Class="Pancake.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Style="{StaticResource {x:Type Window}}" Title="Pancake Client" Width="1260" Height="850" MinWidth="1000" MinHeight="700" Icon="Assets/pancake-logo.png" WindowStartupLocation="CenterScreen" Loaded="Window_Loaded" Closing="Window_Closing">
   <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition Width="230"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="#18211A" Padding="18,25">
@@ -7,7 +7,7 @@
           <Border Width="68" Height="68" HorizontalAlignment="Left" CornerRadius="12" Background="White" Margin="0,0,0,16"><Image Source="Assets/pancake-logo.png" Margin="3"/></Border>
           <TextBlock Text="PANCAKE" FontSize="23" FontWeight="Bold"/><TextBlock Text="CLIENT  /  PCVR" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0"/>
         </StackPanel>
-        <StackPanel DockPanel.Dock="Bottom" Margin="8,20,0,0"><TextBlock Text="v0.1 · First playable build" FontSize="12" Foreground="{StaticResource MutedBrush}"/><TextBlock x:Name="BridgeBadge" Text="Companion offline" Margin="0,8,0,0" Foreground="{StaticResource AccentBrush}" FontSize="12"/></StackPanel>
+        <StackPanel DockPanel.Dock="Bottom" Margin="8,20,0,0"><TextBlock Text="v0.1 · Desktop alpha" FontSize="12" Foreground="{StaticResource MutedBrush}"/><TextBlock x:Name="BridgeBadge" Text="Companion offline" Margin="0,8,0,0" Foreground="{StaticResource AccentBrush}" FontSize="12"/></StackPanel>
         <ListBox x:Name="Navigation" SelectionChanged="Navigation_SelectionChanged" SelectedIndex="0">
           <ListBoxItem Content="Home"/><ListBoxItem Content="Browse Mods"/><ListBoxItem Content="Installed Mods"/><ListBoxItem Content="Profiles &amp; Packs"/><ListBoxItem Content="Avatars &amp; BodyLog"/><ListBoxItem Content="Levels &amp; Saves"/><ListBoxItem Content="Camera &amp; OBS"/><ListBoxItem Content="Console"/><ListBoxItem Content="Settings"/>
         </ListBox>
