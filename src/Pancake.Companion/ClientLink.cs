@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
-using System.Text;
 using System.Text.Json;
+using Pancake.Protocol;
 
 namespace Pancake.Companion;
 
@@ -30,28 +30,23 @@ internal sealed class ClientLink : IDisposable
         {
             try
             {
-                using var connection = new NamedPipeClientStream(".", "PancakeClient.Bonelab.v1", PipeDirection.InOut, PipeOptions.Asynchronous);
+                using var connection = new NamedPipeClientStream(".", PipeMessages.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                 pipe = connection;
                 await connection.ConnectAsync(1500, stop.Token);
-                using var reader = new StreamReader(connection, Encoding.UTF8, false, 4096, true);
-                using var writer = new StreamWriter(connection, new UTF8Encoding(false), 8192, true) { AutoFlush = true };
-                await writer.WriteLineAsync("{\"type\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\"}");
+                await WriteAsync(connection, "{\"type\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\"}");
                 Connected = true;
-                var read = reader.ReadLineAsync();
+                var read = PipeMessages.ReadAsync(connection, stop.Token);
                 while (connection.IsConnected && !stop.IsCancellationRequested)
                 {
                     if (read.IsCompleted)
                     {
-                        var line = await read;
-                        if (line == null) break;
-                        if (line.Length > 65536) throw new InvalidDataException("Desktop message too large.");
-                        using var json = JsonDocument.Parse(line);
-                        if (incoming.Count < 64) incoming.Enqueue(json.RootElement.Clone());
-                        read = reader.ReadLineAsync();
+                        var message = await read;
+                        if (incoming.Count < 64) incoming.Enqueue(message);
+                        read = PipeMessages.ReadAsync(connection, stop.Token);
                     }
-                    for (var i = 0; i < 8 && outgoing.TryDequeue(out var message); i++) await writer.WriteLineAsync(message);
+                    for (var i = 0; i < 8 && outgoing.TryDequeue(out var message); i++) await WriteAsync(connection, message);
                     var frame = Interlocked.Exchange(ref newestFrame, null);
-                    if (frame != null) await writer.WriteLineAsync(frame);
+                    if (frame != null) await WriteAsync(connection, frame);
                     await Task.Delay(20, stop.Token);
                 }
             }
@@ -65,6 +60,12 @@ internal sealed class ClientLink : IDisposable
             }
             try { await Task.Delay(1500, stop.Token); } catch (OperationCanceledException) { break; }
         }
+    }
+    private async Task WriteAsync(Stream stream, string json)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        await PipeMessages.WriteTextAsync(stream, json, timeout.Token);
     }
     public void Dispose() { stop.Cancel(); pipe?.Dispose(); }
 }

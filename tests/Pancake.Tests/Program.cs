@@ -6,6 +6,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using Pancake.Core;
+using Pancake.Protocol;
 
 var checks = new List<(string Name, Func<Task> Run)>
 {
@@ -19,7 +20,7 @@ var checks = new List<(string Name, Func<Task> Run)>
 var failed = 0;
 foreach (var check in checks)
 {
-    try { await check.Run(); Console.WriteLine("PASS " + check.Name); }
+    try { await Task.Run(check.Run).WaitAsync(TimeSpan.FromSeconds(30)); Console.WriteLine("PASS " + check.Name); }
     catch (Exception ex) { failed++; Console.Error.WriteLine("FAIL " + check.Name + "\n" + ex); }
 }
 Console.WriteLine($"{checks.Count - failed}/{checks.Count} checks passed.");
@@ -190,12 +191,15 @@ static async Task BridgeProtocol()
     bridge.Start();
     using var client = new NamedPipeClientStream(".", CompanionBridge.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
     await client.ConnectAsync(3000);
-    using var writer = new StreamWriter(client, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
-    using var reader = new StreamReader(client, Encoding.UTF8, false, 4096, true);
-    await writer.WriteLineAsync("{\"type\":\"hello\",\"protocol\":1}");
-    await connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
-    await writer.WriteLineAsync("{\"type\":\"obs\",\"action\":\"StartRecord\"}");
-    Require((await received.Task.WaitAsync(TimeSpan.FromSeconds(3))).GetProperty("action").GetString() == "StartRecord", "Bridge lost command.");
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    Console.WriteLine("  Pipe connected; sending hello");
+    await PipeMessages.WriteAsync(client, new { type = "hello", protocol = 1 }, timeout.Token);
+    await connected.Task.WaitAsync(timeout.Token);
+    Console.WriteLine("  Hello accepted; sending command");
+    await PipeMessages.WriteAsync(client, new { type = "obs", action = "StartRecord" }, timeout.Token);
+    Require((await received.Task.WaitAsync(timeout.Token)).GetProperty("action").GetString() == "StartRecord", "Bridge lost command.");
+    Console.WriteLine("  Command received; returning status");
     await bridge.SendAsync(new { type = "obsStatus", text = "Recording" });
-    Require((await reader.ReadLineAsync())!.Contains("Recording"), "Bridge lost status response.");
+    Require((await PipeMessages.ReadAsync(client, timeout.Token)).GetProperty("text").GetString() == "Recording", "Bridge lost status response.");
+    Console.WriteLine("  Round trip complete; closing pipe");
 }
