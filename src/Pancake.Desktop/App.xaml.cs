@@ -18,7 +18,6 @@ public partial class App : Application
             };
             try
             {
-                StartupUri = null;
                 var window = new MainWindow();
                 window.Show();
                 window.Dispatcher.BeginInvoke(new Action(() => { window.CaptureSmokeScreenshots(); window.Close(); }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
@@ -40,6 +39,7 @@ public partial class App : Application
             args.Handled = true;
         };
         base.OnStartup(e);
+        new MainWindow().Show();
     }
     protected override void OnExit(ExitEventArgs e) { instance?.Dispose(); base.OnExit(e); }
 }
