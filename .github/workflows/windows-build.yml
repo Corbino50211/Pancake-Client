@@ -22,8 +22,10 @@ jobs:
       - name: Launch WPF smoke check
         shell: pwsh
         run: |
-          $app = Start-Process dotnet -ArgumentList 'src/Pancake.Desktop/bin/Release/net8.0-windows/PancakeClient.dll --smoke-test' -PassThru
+          $app = Start-Process dotnet -ArgumentList 'src/Pancake.Desktop/bin/Release/net8.0-windows/PancakeClient.dll --smoke-test' -PassThru -RedirectStandardError smoke-stderr.log -RedirectStandardOutput smoke-stdout.log
           if (-not $app.WaitForExit(20000)) { $app.Kill(); throw 'Desktop smoke check timed out.' }
+          Get-Content smoke-stdout.log, smoke-stderr.log -ErrorAction SilentlyContinue
+          if (Test-Path artifacts/smoke-error.txt) { Get-Content artifacts/smoke-error.txt }
           if ($app.ExitCode -ne 0) { throw "Desktop smoke check failed: $($app.ExitCode)" }
       - name: Publish portable Windows x64 app
         run: dotnet publish src/Pancake.Desktop -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o artifacts/PancakeClient-win-x64

@@ -9,10 +9,25 @@ public partial class App : Application
     {
         if (e.Args.Contains("--smoke-test"))
         {
-            StartupUri = null;
-            var window = new MainWindow();
-            window.Show();
-            window.Dispatcher.BeginInvoke(new Action(() => { window.CaptureSmokeScreenshots(); window.Close(); }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            Directory.CreateDirectory("artifacts");
+            DispatcherUnhandledException += (_, args) =>
+            {
+                File.WriteAllText("artifacts/smoke-error.txt", args.Exception.ToString());
+                args.Handled = true;
+                Shutdown(1);
+            };
+            try
+            {
+                StartupUri = null;
+                var window = new MainWindow();
+                window.Show();
+                window.Dispatcher.BeginInvoke(new Action(() => { window.CaptureSmokeScreenshots(); window.Close(); }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText("artifacts/smoke-error.txt", ex.ToString());
+                Shutdown(1);
+            }
             return;
         }
         instance = new Mutex(true, "Local\\PancakeClient.Desktop", out var first);
