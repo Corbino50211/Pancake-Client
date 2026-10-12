@@ -10,12 +10,12 @@ The first release is an unsigned development build for Windows x64. There is no 
 
 1. Open **Settings**.
 2. Click **Detect Steam install**, or **Browse game folder** for a custom/Meta PC installation.
-3. Select the folder containing `BONELAB.exe`.
+3. Select the folder containing `BONELAB_Steam_Windows64.exe` (Steam) or `BONELAB.exe`.
 4. Confirm the **Content Mods folder**, usually:
    `%USERPROFILE%\AppData\LocalLow\Stress Level Zero\BONELAB\Mods`
 5. Click **Save settings**.
 
-Code mods live in `Mods` next to `BONELAB.exe`; loader plugins live in `Plugins` next to it. Content mods live in the separate LocalLow folder. Do not select the same directory for code and content mods.
+Code mods live in `Mods` in the game installation; loader plugins live in `Plugins` next to it. Content mods live in the separate LocalLow folder. Do not select the same directory for code and content mods.
 
 ## 3. Manage existing mods
 

@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$GameDir)
 $ErrorActionPreference = 'Stop'
 $GameDir = (Resolve-Path -LiteralPath $GameDir).Path
-if (Get-Process BONELAB -ErrorAction SilentlyContinue) { throw 'Close BONELAB before building/installing the companion.' }
+if (Get-Process BONELAB,BONELAB_Steam_Windows64 -ErrorAction SilentlyContinue) { throw 'Close BONELAB before building/installing the companion.' }
 Push-Location (Join-Path $PSScriptRoot '..')
 try {
     dotnet build src/Pancake.Companion -c Release "-p:GameDir=$GameDir"

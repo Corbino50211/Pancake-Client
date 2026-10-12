@@ -7,15 +7,7 @@ public sealed class ModLibrary
 {
     private readonly ClientSettings settings;
     public ModLibrary(ClientSettings settings) => this.settings = settings;
-    public static bool GameRunning
-    {
-        get
-        {
-            var processes = Process.GetProcessesByName("BONELAB");
-            try { return processes.Length > 0; }
-            finally { foreach (var process in processes) process.Dispose(); }
-        }
-    }
+    public static bool GameRunning => GameInstallation.IsRunning();
     public static void RequireGameClosed()
     {
         if (GameRunning) throw new InvalidOperationException("Close BONELAB before changing mods or profiles.");

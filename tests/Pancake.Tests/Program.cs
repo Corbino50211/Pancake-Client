@@ -10,6 +10,7 @@ using Pancake.Protocol;
 
 var checks = new List<(string Name, Func<Task> Run)>
 {
+    ("Game executable detection and running-game guard", GameDetection),
     ("Inventory and reversible toggles", Inventory),
     ("Profile round trip, missing mods and rollback", Profiles),
     ("Archive traversal and extraction limits", Archives),
@@ -46,6 +47,30 @@ static ClientSettings Fixture(string root)
     File.WriteAllText(Path.Combine(game, "Plugins", "Loader.dll"), "plugin");
     File.WriteAllText(Path.Combine(content, "ExampleAvatar", "pallet.json"), "{\"title\":\"Example Avatar\"}");
     return new() { GameDirectory = game, ContentDirectory = content };
+}
+static Task GameDetection()
+{
+    var root = Temp();
+    try
+    {
+        Require(GameInstallation.FindExecutable(root) == null, "Empty folder accepted.");
+        File.WriteAllText(Path.Combine(root, "UnityCrashHandler64.exe"), "");
+        Require(GameInstallation.FindExecutable(root) == null, "Unrelated executable accepted.");
+        foreach (var name in new[] { "BONELAB.exe", "BONELAB_Steam_Windows64.exe" })
+        {
+            var path = Path.Combine(root, name); File.WriteAllText(path, "");
+            Require(GameInstallation.FindExecutable(root) == path, "Game executable was not recognized: " + name);
+            File.Delete(path);
+            if (!OperatingSystem.IsWindows()) continue;
+            File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"), path);
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path, "/c ping -n 30 127.0.0.1 > nul") { CreateNoWindow = true })!;
+            try { Require(ModLibrary.GameRunning, "Running game was not recognized: " + name); Throws<InvalidOperationException>(ModLibrary.RequireGameClosed); }
+            finally { if (!process.HasExited) process.Kill(true); process.WaitForExit(); }
+            File.Delete(path);
+        }
+    }
+    finally { Directory.Delete(root, true); }
+    return Task.CompletedTask;
 }
 static Task Inventory()
 {

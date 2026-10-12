@@ -134,8 +134,8 @@ public partial class MainWindow : Window
         ModCount.Text = mods.Count.ToString();
         EnabledCount.Text = mods.Count(x => x.Enabled).ToString();
         ProfileBadge.Text = settings.ActiveProfile;
-        var found = File.Exists(Path.Combine(settings.GameDirectory, "BONELAB.exe"));
-        GameStatus.Text = found ? "BONELAB is configured. Your current mod setup is ready to launch." : "Choose the folder containing BONELAB.exe in Settings.";
+        var found = GameInstallation.FindExecutable(settings.GameDirectory) != null;
+        GameStatus.Text = found ? "BONELAB is configured. Your current mod setup is ready to launch." : "Choose the BONELAB game folder in Settings.";
         LoaderStatus.Text = "MelonLoader: " + (Directory.Exists(Path.Combine(settings.GameDirectory, "MelonLoader")) ? "found" : "not found") + "  ·  BoneLib: " + (File.Exists(Path.Combine(settings.GameDirectory, "Mods", "BoneLib.dll")) ? "found" : "not found");
     }
     private void FilterMods() => ModsGrid.ItemsSource = mods.Where(x => x.Name.Contains(ModSearch.Text, StringComparison.OrdinalIgnoreCase) || x.Kind.Contains(ModSearch.Text, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -176,8 +176,8 @@ public partial class MainWindow : Window
     }
     private async void Launch_Click(object sender, RoutedEventArgs e) => await RunAsync(() =>
     {
-        var exe = Path.Combine(settings.GameDirectory, "BONELAB.exe");
-        if (!File.Exists(exe)) throw new FileNotFoundException("Choose your BONELAB installation in Settings.");
+        var exe = GameInstallation.FindExecutable(settings.GameDirectory)
+            ?? throw new FileNotFoundException("Choose your BONELAB installation in Settings.");
         if (ModLibrary.GameRunning) throw new InvalidOperationException("BONELAB is already running.");
         Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = settings.GameDirectory, UseShellExecute = true });
         StatusText.Text = "BONELAB launch requested.";
@@ -188,7 +188,7 @@ public partial class MainWindow : Window
     private void Modio_Click(object sender, RoutedEventArgs e) => OpenUrl("https://mod.io/g/bonelab");
     private void BrowseGame_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Select the folder containing BONELAB.exe" };
+        var dialog = new OpenFolderDialog { Title = "Select the BONELAB game folder" };
         if (dialog.ShowDialog() == true) GamePath.Text = dialog.FolderName;
     }
     private void BrowseContent_Click(object sender, RoutedEventArgs e)
@@ -208,7 +208,7 @@ public partial class MainWindow : Window
                 foreach (Match match in Regex.Matches(File.ReadAllText(config), "\"path\"\\s+\"([^\"]+)\""))
                     libraries.Add(match.Groups[1].Value.Replace("\\\\", "\\"));
         }
-        var found = libraries.Select(x => Path.Combine(x, "steamapps", "common", "BONELAB")).FirstOrDefault(x => File.Exists(Path.Combine(x, "BONELAB.exe")));
+        var found = libraries.Select(x => Path.Combine(x, "steamapps", "common", "BONELAB")).FirstOrDefault(x => GameInstallation.FindExecutable(x) != null);
         if (found == null) throw new DirectoryNotFoundException("Steam BONELAB was not found. Use Browse game folder for a custom or Meta PC installation.");
         GamePath.Text = found; StatusText.Text = "Installation detected. Press Save settings.";
         return Task.CompletedTask;
@@ -216,10 +216,10 @@ public partial class MainWindow : Window
     private async void SaveSettings_Click(object sender, RoutedEventArgs e) => await RunAsync(() =>
     {
         var game = Path.GetFullPath(GamePath.Text.Trim());
-        if (!File.Exists(Path.Combine(game, "BONELAB.exe"))) throw new IOException("The game folder must contain BONELAB.exe.");
+        if (GameInstallation.FindExecutable(game) == null) throw new IOException("The game folder must contain BONELAB_Steam_Windows64.exe or BONELAB.exe.");
         var content = Path.GetFullPath(ContentPath.Text.Trim());
         var code = Path.GetFullPath(Path.Combine(game, "Mods"));
-        if (content.TrimEnd('\\').Equals(code.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) throw new IOException("Content mods belong in the separate LocalLow Mods folder, not the code Mods folder beside BONELAB.exe.");
+        if (content.TrimEnd('\\').Equals(code.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) throw new IOException("Content mods belong in the separate LocalLow Mods folder, not the code Mods folder in the game installation.");
         settings.GameDirectory = game;
         settings.ContentDirectory = content;
         settings.ScreenshotDirectory = Path.GetFullPath(ScreenshotPath.Text.Trim());
@@ -312,7 +312,7 @@ public partial class MainWindow : Window
     private async void InstallCompanion_Click(object sender, RoutedEventArgs e) => await RunAsync(() =>
     {
         ModLibrary.RequireGameClosed();
-        if (!File.Exists(Path.Combine(settings.GameDirectory, "BONELAB.exe"))) throw new IOException("Configure your game folder first.");
+        if (GameInstallation.FindExecutable(settings.GameDirectory) == null) throw new IOException("Configure your game folder first.");
         var dialog = new OpenFileDialog { Filter = "Pancake companion|Pancake.Companion.dll" };
         if (dialog.ShowDialog() != true) return Task.CompletedTask;
         var folder = Path.Combine(settings.GameDirectory, "Mods");
