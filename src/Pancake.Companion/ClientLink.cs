@@ -33,7 +33,7 @@ internal sealed class ClientLink : IDisposable
                 using var connection = new NamedPipeClientStream(".", PipeMessages.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                 pipe = connection;
                 await connection.ConnectAsync(1500, stop.Token);
-                await WriteAsync(connection, "{\"type\":\"hello\",\"protocol\":1,\"version\":\"0.1.0\"}");
+                await WriteAsync(connection, "{\"type\":\"hello\",\"protocol\":1,\"version\":\"0.2.0\"}");
                 Connected = true;
                 var read = PipeMessages.ReadAsync(connection, stop.Token);
                 while (connection.IsConnected && !stop.IsCancellationRequested)
