@@ -199,7 +199,8 @@ static async Task BridgeProtocol()
     await PipeMessages.WriteAsync(client, new { type = "obs", action = "StartRecord" }, timeout.Token);
     Require((await received.Task.WaitAsync(timeout.Token)).GetProperty("action").GetString() == "StartRecord", "Bridge lost command.");
     Console.WriteLine("  Command received; returning status");
+    var response = PipeMessages.ReadAsync(client, timeout.Token);
     await bridge.SendAsync(new { type = "obsStatus", text = "Recording" });
-    Require((await PipeMessages.ReadAsync(client, timeout.Token)).GetProperty("text").GetString() == "Recording", "Bridge lost status response.");
+    Require((await response).GetProperty("text").GetString() == "Recording", "Bridge lost status response.");
     Console.WriteLine("  Round trip complete; closing pipe");
 }

@@ -23,7 +23,7 @@ public sealed class CompanionBridge : IAsyncDisposable
         {
             try
             {
-                using var connection = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                using var connection = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly, 65536, 65536);
                 pipe = connection;
                 await connection.WaitForConnectionAsync(stop.Token);
                 using var helloTimeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
@@ -33,7 +33,11 @@ public sealed class CompanionBridge : IAsyncDisposable
                     throw new InvalidDataException("Unsupported companion protocol.");
                 Connected = true;
                 ConnectionChanged?.Invoke(true);
-                while (!stop.IsCancellationRequested) Message?.Invoke(await PipeMessages.ReadAsync(connection, stop.Token));
+                while (!stop.IsCancellationRequested)
+                {
+                    var message = await PipeMessages.ReadAsync(connection, stop.Token);
+                    Message?.Invoke(message);
+                }
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
             catch (EndOfStreamException) { }
