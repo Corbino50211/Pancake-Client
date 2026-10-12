@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Pancake.Core\Pancake.Core.csproj" />
     <Resource Include="Assets\pancake-logo.jpg" />
+    <Resource Include="Assets\pancake-logo.png" />
     <Resource Include="Assets\pancake.ico" />
   </ItemGroup>
 </Project>
