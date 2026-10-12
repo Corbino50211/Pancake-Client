@@ -30,6 +30,9 @@ public partial class MainWindow : Window
     private Image? captureImage;
     private ClientUpdate? availableUpdate;
     private bool checkingUpdate;
+    private bool cameraActive, syncingCamera;
+    private bool obsLive;
+    private readonly DispatcherTimer cameraDebounce = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private bool ready, busy, polling, closing, canClose;
     private static string SettingsFile => Path.Combine(ClientStorage.Root, "settings.json");
     private static string ProfilesFolder => Path.Combine(ClientStorage.Root, "profiles");
@@ -49,7 +52,7 @@ public partial class MainWindow : Window
         ObsAddress.Text = settings.ObsUrl;
         MicSource.Text = settings.MicrophoneSource;
         AllowStreaming.IsChecked = settings.AllowInGameStreaming;
-        CameraMode.SelectedIndex = Array.IndexOf(new[] { "First person", "Right hand", "Stationary", "Follow" }, settings.CameraMode);
+        CameraMode.SelectedIndex = Array.IndexOf(new[] { "Handheld", "First person", "Right hand", "Stationary", "Follow", "Out front" }, settings.CameraMode);
         if (CameraMode.SelectedIndex < 0) CameraMode.SelectedIndex = 0;
         FovSlider.Value = Math.Clamp(settings.CameraFov, 30, 110);
         bridge.ConnectionChanged += connected => Ui(() =>
@@ -57,7 +60,9 @@ public partial class MainWindow : Window
             BridgeBadge.Text = connected ? "Companion connected" : "Companion offline";
             if (!connected)
             {
+                cameraActive = false;
                 CameraStatus.Text = "Companion disconnected. Waiting for BONELAB.";
+                CameraPreview.Source = null; PreviewPlaceholder.Visibility = Visibility.Visible;
                 lastFrame = null;
                 if (captureImage != null) captureImage.Source = null;
             }
@@ -69,6 +74,7 @@ public partial class MainWindow : Window
         timer.Tick += async (_, _) => await PollAsync();
         AutoUpdateCheck.IsChecked = settings.CheckForUpdates;
         UpdateStatus.Text = "Installed: " + ClientUpdater.InstalledVersion(AppContext.BaseDirectory);
+        cameraDebounce.Tick += async (_, _) => { cameraDebounce.Stop(); if (cameraActive && bridge.Connected) await RunAsync(SendCameraAsync); };
         ready = true;
         ShowPage(0);
     }
@@ -135,7 +141,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (closing) return;
         closing = true;
-        timer.Stop();
+        timer.Stop(); cameraDebounce.Stop();
         closingToken.Cancel();
         captureWindow?.Close();
         await bridge.DisposeAsync();
@@ -425,6 +431,7 @@ public partial class MainWindow : Window
         var isRecording = recording.GetProperty("outputActive").GetBoolean();
         var paused = recording.GetProperty("outputPaused").GetBoolean();
         var isStreaming = streaming.GetProperty("outputActive").GetBoolean();
+        obsLive = isStreaming;
         var time = recording.GetProperty("outputTimecode").GetString();
         var status = (isRecording ? (paused ? "Paused " : "Recording ") + time : "Recording stopped") + " · " + (isStreaming ? "LIVE" : "Stream offline");
         ObsStatus.Text = status;
@@ -433,7 +440,7 @@ public partial class MainWindow : Window
     }
     private async Task SendObsStatusSafeAsync(string status)
     {
-        try { if (bridge.Connected) await bridge.SendAsync(new { type = "obsStatus", text = status, connected = obs.Connected, scenes }); }
+        try { if (bridge.Connected) await bridge.SendAsync(new { type = "obsStatus", text = status, connected = obs.Connected, live = obs.Connected && obsLive, scenes }); }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException or InvalidOperationException) { }
     }
     private async Task PollAsync()
@@ -472,19 +479,59 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() == true) File.WriteAllText(dialog.FileName, LogText.Text);
     }
     private async void OpenLogs_Click(object sender, RoutedEventArgs e) => await RunAsync(() => { OpenFolder(Path.Combine(settings.GameDirectory, "MelonLoader")); return Task.CompletedTask; });
-    private void Fov_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (FovLabel != null) FovLabel.Text = $"Field of view · {e.NewValue:0}°"; }
-    private async void CameraStart_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    private void Fov_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (FovLabel != null) FovLabel.Text = $"Field of view · {e.NewValue:0}°";
+        if (ready && cameraActive && !syncingCamera) { cameraDebounce.Stop(); cameraDebounce.Start(); }
+    }
+    private async void CameraMode_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (ready && cameraActive && !syncingCamera && bridge.Connected) await RunAsync(SendCameraAsync);
+    }
+    private async Task SendCameraAsync()
     {
         settings.CameraMode = ((ComboBoxItem)CameraMode.SelectedItem).Content.ToString()!;
         settings.CameraFov = FovSlider.Value; Persist();
         await bridge.SendAsync(new { type = "camera", enabled = true, mode = settings.CameraMode, fov = settings.CameraFov });
-        CameraStatus.Text = "Camera requested. Waiting for the first frame…";
-        OpenCaptureWindow();
+        cameraActive = true;
+        CameraStatus.Text = "Requested " + settings.CameraMode + ". View changes affect the capture feed, not your headset.";
+    }
+    private async void CameraStart_Click(object sender, RoutedEventArgs e) => await RunAsync(async () => { await SendCameraAsync(); OpenCaptureWindow(); });
+    private async void CameraRecall_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        await bridge.SendAsync(new { type = "cameraRecall" }); cameraActive = true; OpenCaptureWindow();
+        CameraStatus.Text = "Handheld camera requested in front of you. Grab either side handle.";
+    });
+    private async void BuildCompanion_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        ModLibrary.RequireGameClosed();
+        if (GameInstallation.FindExecutable(settings.GameDirectory) == null) throw new IOException("Save your BONELAB game folder first.");
+        var project = Path.Combine(AppContext.BaseDirectory, "CompanionSource", "src", "Pancake.Companion", "Pancake.Companion.csproj");
+        if (!File.Exists(project)) throw new FileNotFoundException("Update Pancake Client to get the bundled companion source.");
+        var work = Path.Combine(ClientStorage.Root, "companion-build"); Directory.CreateDirectory(work);
+        var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in new[] { "build", project, "-c", "Release", "-p:GameDir=" + settings.GameDirectory, "-o", work }) start.ArgumentList.Add(arg);
+        StatusText.Text = "Building the companion. This can take a minute…";
+        Process process;
+        try { process = Process.Start(start) ?? throw new IOException("Build process did not start."); }
+        catch (Win32Exception) { throw new IOException("Install the .NET 8 SDK, then restart Pancake Client and try again."); }
+        using (process)
+        {
+            var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var log = await output + "\n" + await errors; File.WriteAllText(Path.Combine(work, "build.log"), log);
+            if (process.ExitCode != 0) { OpenFolder(work); throw new IOException("Companion build failed. Open build.log in the folder shown and send its errors."); }
+        }
+        ModLibrary.RequireGameClosed();
+        var destination = Path.Combine(settings.GameDirectory, "Mods", "Pancake.Companion.dll"); Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        if (File.Exists(destination)) File.Copy(destination, destination + ".backup-" + DateTime.Now.ToString("yyyyMMddHHmmss"));
+        File.Copy(Path.Combine(work, "Pancake.Companion.dll"), destination, true);
+        RefreshMods(); StatusText.Text = "Companion built and installed. Launch BONELAB; the handheld camera appears when your player is ready.";
     });
     private async void CameraStop_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         await bridge.SendAsync(new { type = "camera", enabled = false });
-        CameraStatus.Text = "Camera stopped."; lastFrame = null;
+        cameraActive = false; CameraStatus.Text = "Camera stopped."; lastFrame = null; CameraPreview.Source = null; PreviewPlaceholder.Visibility = Visibility.Visible;
         if (captureImage != null) captureImage.Source = null;
     });
     private void OpenCaptureWindow()
@@ -513,17 +560,27 @@ public partial class MainWindow : Window
         try
         {
             var type = message.GetProperty("type").GetString();
+            if (type == "cameraState")
+            {
+                cameraActive = message.GetProperty("enabled").GetBoolean();
+                var selected = message.GetProperty("mode").GetString();
+                syncingCamera = true;
+                try { foreach (ComboBoxItem item in CameraMode.Items) if (item.Content.ToString() == selected) CameraMode.SelectedItem = item; FovSlider.Value = message.GetProperty("fov").GetDouble(); }
+                finally { syncingCamera = false; }
+                CameraStatus.Text = "Active camera: " + selected; return;
+            }
             if (type == "frame")
             {
                 var bytes = Convert.FromBase64String(message.GetProperty("jpeg").GetString()!);
                 using var memory = new MemoryStream(bytes);
                 var frame = new BitmapImage(); frame.BeginInit(); frame.CacheOption = BitmapCacheOption.OnLoad; frame.DecodePixelWidth = 640; frame.StreamSource = memory; frame.EndInit(); frame.Freeze();
-                lastFrame = frame;
+                lastFrame = frame; cameraActive = true;
+                CameraPreview.Source = frame; PreviewPlaceholder.Visibility = Visibility.Collapsed;
                 if (captureImage != null) captureImage.Source = frame;
                 CameraStatus.Text = "Camera feed connected · 640 × 360 · experimental preview";
                 return;
             }
-            if (type == "cameraStopped") { lastFrame = null; if (captureImage != null) captureImage.Source = null; CameraStatus.Text = "Camera stopped."; return; }
+            if (type == "cameraStopped") { cameraActive = false; lastFrame = null; CameraPreview.Source = null; PreviewPlaceholder.Visibility = Visibility.Visible; if (captureImage != null) captureImage.Source = null; CameraStatus.Text = "Camera stopped."; return; }
             if (type == "status") { CameraStatus.Text = message.GetProperty("text").GetString(); return; }
             if (type == "screenshot") { SaveScreenshot(); await SendObsStatusSafeAsync("Screenshot saved"); return; }
             if (type != "obs") return;

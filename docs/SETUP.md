@@ -87,3 +87,7 @@ Automated checks cover inventory toggles, profile rollback, archive safety, cont
 ## Desktop updates
 
 The client checks public GitHub Releases at startup. Settings → Client updates lets you check manually or disable startup checks. Choose Install update & restart while BONELAB is closed. The download is checked against its SHA-256 manifest before extraction. Settings and profiles stay in LocalAppData/PancakeClient; replaced application files are backed up in its updates/backups folder. Update failures are logged in update-errors.log. The companion and installed game mods are not updated by the desktop updater.
+
+## Build/install the revised companion in the app
+
+Update the desktop app, save the BONELAB game path, close BONELAB, and choose Settings → Build & install companion. The .NET 8 SDK must be installed first. Source is bundled with the desktop release; the build uses your local MelonLoader, BoneLib, and generated game assemblies. Existing companion DLLs are backed up before replacement. On failure, the app opens the build folder containing build.log. Desktop automatic updates deliver new source but do not replace an in-use game companion; rebuild from Settings after an update.

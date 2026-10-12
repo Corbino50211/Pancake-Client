@@ -37,6 +37,10 @@ jobs:
         run: |
           Copy-Item docs/SETUP.md artifacts/PancakeClient-win-x64/SETUP.md
           Copy-Item docs/OBS.md artifacts/PancakeClient-win-x64/OBS.md
+          New-Item artifacts/PancakeClient-win-x64/CompanionSource/src -ItemType Directory -Force | Out-Null
+          Copy-Item Directory.Build.props artifacts/PancakeClient-win-x64/CompanionSource/
+          Copy-Item src/Pancake.Companion artifacts/PancakeClient-win-x64/CompanionSource/src/ -Recurse
+          Copy-Item src/Pancake.Shared artifacts/PancakeClient-win-x64/CompanionSource/src/ -Recurse
       - name: Write installed version
         shell: pwsh
         run: |
