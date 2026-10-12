@@ -494,12 +494,12 @@ public partial class MainWindow : Window
         settings.CameraFov = FovSlider.Value; Persist();
         await bridge.SendAsync(new { type = "camera", enabled = true, mode = settings.CameraMode, fov = settings.CameraFov });
         cameraActive = true;
-        CameraStatus.Text = "Requested " + settings.CameraMode + ". View changes affect the capture feed, not your headset.";
+        CameraStatus.Text = "Requested " + settings.CameraMode + ". View changes affect BONELAB’s spectator camera, not your headset.";
     }
-    private async void CameraStart_Click(object sender, RoutedEventArgs e) => await RunAsync(async () => { await SendCameraAsync(); OpenCaptureWindow(); });
+    private async void CameraStart_Click(object sender, RoutedEventArgs e) => await RunAsync(async () => { await SendCameraAsync(); });
     private async void CameraRecall_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
-        await bridge.SendAsync(new { type = "cameraRecall" }); cameraActive = true; OpenCaptureWindow();
+        await bridge.SendAsync(new { type = "cameraRecall" }); cameraActive = true;
         CameraStatus.Text = "Handheld camera requested in front of you. Grab either side handle.";
     });
     private async void BuildCompanion_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
@@ -541,7 +541,7 @@ public partial class MainWindow : Window
         captureWindow = new Window { Title = "Pancake Camera", Width = 980, Height = 590, MinWidth = 320, MinHeight = 180, Background = System.Windows.Media.Brushes.Black, Content = captureImage };
         captureWindow.Closed += (_, _) => { captureWindow = null; captureImage = null; };
         captureWindow.Show();
-        StatusText.Text = "In OBS add Window Capture → Pancake Camera. The window's content contains only the camera feed.";
+        StatusText.Text = "In OBS add Window Capture → Pancake Camera. This optional preview is 5 FPS; capture the BONELAB window for full frame rate.";
     }
     private void CaptureWindow_Click(object sender, RoutedEventArgs e) => OpenCaptureWindow();
     private void SaveScreenshot()
@@ -560,6 +560,7 @@ public partial class MainWindow : Window
         try
         {
             var type = message.GetProperty("type").GetString();
+            if (type == "spectatorState") { SpectatorStatus.Text = message.GetProperty("text").GetString(); return; }
             if (type == "cameraState")
             {
                 cameraActive = message.GetProperty("enabled").GetBoolean();
@@ -573,11 +574,11 @@ public partial class MainWindow : Window
             {
                 var bytes = Convert.FromBase64String(message.GetProperty("jpeg").GetString()!);
                 using var memory = new MemoryStream(bytes);
-                var frame = new BitmapImage(); frame.BeginInit(); frame.CacheOption = BitmapCacheOption.OnLoad; frame.DecodePixelWidth = 640; frame.StreamSource = memory; frame.EndInit(); frame.Freeze();
+                var frame = new BitmapImage(); frame.BeginInit(); frame.CacheOption = BitmapCacheOption.OnLoad; frame.DecodePixelWidth = 1920; frame.StreamSource = memory; frame.EndInit(); frame.Freeze();
                 lastFrame = frame; cameraActive = true;
                 CameraPreview.Source = frame; PreviewPlaceholder.Visibility = Visibility.Collapsed;
                 if (captureImage != null) captureImage.Source = frame;
-                CameraStatus.Text = "Camera feed connected · 640 × 360 · experimental preview";
+                CameraStatus.Text = "1080p app preview · Record the BONELAB spectator window for full frame rate";
                 return;
             }
             if (type == "cameraStopped") { cameraActive = false; lastFrame = null; CameraPreview.Source = null; PreviewPlaceholder.Visibility = Visibility.Visible; if (captureImage != null) captureImage.Source = null; CameraStatus.Text = "Camera stopped."; return; }

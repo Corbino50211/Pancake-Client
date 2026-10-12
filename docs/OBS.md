@@ -31,21 +31,19 @@ The Pancake menu's top status row shows recording state/time, streaming state, o
 
 The revised companion source adds a runtime-built handheld camera with two native BoxGrip handles, a live screen, and an OBS streaming indicator. It spawns in front of your player when the rig is ready. Grab a side handle; release it to leave the camera floating. BoneMenu → Pancake Client → Camera → Spawn / recall handheld camera brings it back when not held. Views include handheld, first person, right hand, stationary, behind-you follow, and out front. This companion revision still requires compilation against your local game and headset testing.
 
-1. In the desktop **Camera & OBS** section, select a view and FOV.
-2. Click **Start camera**. Active dropdown and FOV changes are sent immediately. This opens a window named **Pancake Camera**.
-3. In OBS, add **Window Capture** and choose **Pancake Camera**. Enable client-area capture or crop borders if your capture method includes window chrome.
-4. Keep that window open and unminimized. Add it to the scenes you want.
-5. Start recording from the desktop or the in-game OBS menu.
+1. In BONELAB settings, set spectator mode to **Fish Eye** so the native monitor camera is enabled.
+2. Keep Pancake Client open and choose a view under **Camera & OBS**, then click **Start camera**. Active view and FOV changes apply to BONELAB's native spectator camera.
+3. In OBS, capture the **BONELAB game window**, using Game Capture or Window Capture. Set your game window and OBS canvas/output resolution as desired. Monitor output uses the game's native render path and frame rate; it does not pass through JPEG or IPC.
+4. The handheld screen uses a **1920×1080** render texture. The optional desktop preview uses JPEG at up to **5 FPS** and is separate from the native monitor output. No extra window opens automatically.
+5. Stopping the camera restores the native spectator follower target and FOV. After a level change, the companion finds the new spectator camera.
 
-The output is **640×360, JPEG, up to 10 FPS**. It is an initial bridge implementation, not a 60-FPS production camera. Rendering/readback can affect VR frame time. Turn it off when unused. For full-quality normal gameplay recording, capture BONELAB's regular desktop mirror directly in OBS; the in-game OBS controls still work.
+The camera source uses BONELAB's SLZ shaders and Interactable layer for visible geometry, replacing the generic materials/default layer that could produce a shadow-only prop. This revision still requires local compilation and headset testing.
 
-The capture window contains the camera image only. Objects that the in-game camera sees, potentially including world-space menus or your avatar, can still appear in its view. The initial first-person camera may need per-avatar framing adjustments. The handheld prop respawns when your rig is ready in the new level. Camera views change the capture feed, not your headset view.
-
-Use **Save screenshot** to write the most recent camera frame as PNG. This preserves the preview resolution; it is not a high-resolution render.
+The app's **Save screenshot** saves its most recent 1080p preview frame. For video, record BONELAB directly in OBS. Enable Fish Eye if the companion reports that the spectator camera is unavailable.
 
 ## Planned camera improvements
 
-- High-quality GPU-based capture instead of JPEG/readback.
+- Reduce overhead of the optional app preview readback. Native spectator recording already avoids JPEG/IPC.
 - Further physical-camera polish and headset validation.
 - Camera presets paired with OBS scenes.
 - Follow collision avoidance and configurable damping/distance.

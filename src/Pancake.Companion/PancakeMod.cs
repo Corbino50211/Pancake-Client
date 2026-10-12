@@ -4,7 +4,7 @@ using BoneLib.BoneMenu;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Pancake.Companion.PancakeMod), "Pancake Client Companion", "0.2.0", "Corbino50211")]
+[assembly: MelonInfo(typeof(Pancake.Companion.PancakeMod), "Pancake Client Companion", "0.3.0", "Corbino50211")]
 [assembly: MelonGame("Stress Level Zero", "BONELAB")]
 [assembly: MelonAdditionalDependencies("BoneLib")]
 
@@ -19,6 +19,10 @@ public sealed class PancakeMod : MelonMod
     private PhysicalCamera? prop;
     private bool autoSpawn = true;
     private float nextSpawnAttempt;
+    private readonly SpectatorOutput spectator = new();
+    private bool spectatorBound;
+    private float nextSpectatorAttempt;
+    private const int Width = 1920, Height = 1080;
     private Camera? camera;
     private RenderTexture? target;
     private Texture2D? pixels;
@@ -144,9 +148,9 @@ public sealed class PancakeMod : MelonMod
         camera.rect = new Rect(0, 0, 1, 1);
         camera.nearClipPlane = .03f;
         camera.allowHDR = false;
-        target = new RenderTexture(640, 360, 24, RenderTextureFormat.ARGB32);
+        target = new RenderTexture(Width, Height, 24, RenderTextureFormat.ARGB32);
         target.Create(); camera.targetTexture = target;
-        pixels = new Texture2D(640, 360, TextureFormat.RGB24, false);
+        pixels = new Texture2D(Width, Height, TextureFormat.RGB24, false);
         try { prop = new PhysicalCamera(target); }
         catch { ReleaseCamera(); throw; }
         return true;
@@ -186,17 +190,26 @@ public sealed class PancakeMod : MelonMod
                     camera.transform.SetPositionAndRotation(head.position, head.rotation);
                     break;
             }
+            if (spectatorBound) spectatorBound = spectator.Bind(camera.transform, fov);
+            if (Time.unscaledTime >= nextSpectatorAttempt)
+            {
+                nextSpectatorAttempt = Time.unscaledTime + 2;
+                var bound = spectator.Bind(camera.transform, fov);
+                Send(new { type = "spectatorState", active = bound, text = bound ? "BONELAB spectator view active. Capture the BONELAB game window in OBS." : "Set BONELAB spectator mode to Fish Eye to enable monitor output." });
+                spectatorBound = bound;
+            }
             if (link?.Connected != true || Time.unscaledTime < nextFrame) return;
-            nextFrame = Time.unscaledTime + .1f;
+            nextFrame = Time.unscaledTime + .2f;
             var previous = RenderTexture.active;
             try
             {
                 RenderTexture.active = target;
                 if (link?.Connected != true) return;
-                pixels!.ReadPixels(new Rect(0, 0, 640, 360), 0, 0);
+                pixels!.ReadPixels(new Rect(0, 0, Width, Height), 0, 0);
                 pixels.Apply(false);
-                byte[] jpeg = ImageConversion.EncodeToJPG(pixels, 65);
-                link!.Frame(Convert.ToBase64String(jpeg));
+                byte[] jpeg = ImageConversion.EncodeToJPG(pixels, 85);
+                if (jpeg.Length > 740000) jpeg = ImageConversion.EncodeToJPG(pixels, 65);
+                if (jpeg.Length <= 740000) link!.Frame(Convert.ToBase64String(jpeg));
             }
             finally { RenderTexture.active = previous; }
         }
@@ -209,6 +222,7 @@ public sealed class PancakeMod : MelonMod
     }
     private void ReleaseCamera()
     {
+        spectator.Dispose(); spectatorBound = false; nextSpectatorAttempt = 0;
         prop?.Dispose(); prop = null;
         if (camera != null) UnityEngine.Object.Destroy(camera.gameObject);
         if (target != null) { target.Release(); UnityEngine.Object.Destroy(target); }

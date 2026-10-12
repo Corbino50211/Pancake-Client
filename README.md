@@ -25,7 +25,7 @@ Implemented in this first build:
 - User-selected save-folder ZIP backups and live MelonLoader log filtering/export.
 - OBS WebSocket 5 connection/authentication, scene switching, recording, streaming, microphone mute, and live output status. Password stays in memory.
 - Local current-user named-pipe bridge for the BONELAB companion.
-- Companion source with BoneMenu camera/OBS controls, a runtime-built handheld prop with native grab handles and live screen, and an experimental 640×360, up-to-10-FPS desktop camera feed. Build/install the source against your local game from Settings.
+- Companion source with BoneMenu camera/OBS controls, a runtime-built handheld prop with native grab handles and live screen, and native BONELAB spectator output plus an optional 1080p, up-to-5-FPS app preview. Build/install the source against your local game from Settings.
 
 **The Windows desktop app and core checks build in CI. The companion must be built against your installed game's MelonLoader/IL2CPP assemblies and BoneLib. It has not yet been validated in a running BONELAB headset session.** No game assemblies are included.
 
