@@ -4,6 +4,7 @@ namespace Pancake.Core;
 
 public sealed class ClientSettings
 {
+    public bool CheckForUpdates { get; set; } = true;
     public string GameDirectory { get; set; } = "";
     public string ContentDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "Stress Level Zero", "BONELAB", "Mods");
     public string ObsUrl { get; set; } = "ws://127.0.0.1:4455";

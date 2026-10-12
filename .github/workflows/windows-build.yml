@@ -4,6 +4,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -34,6 +37,10 @@ jobs:
         run: |
           Copy-Item docs/SETUP.md artifacts/PancakeClient-win-x64/SETUP.md
           Copy-Item docs/OBS.md artifacts/PancakeClient-win-x64/OBS.md
+      - name: Write installed version
+        shell: pwsh
+        run: |
+          @{ Version = '0.1.${{ github.run_number }}.${{ github.run_attempt }}' } | ConvertTo-Json | Set-Content artifacts/PancakeClient-win-x64/client-version.json
       - uses: actions/upload-artifact@v4
         with:
           name: PancakeClient-win-x64
@@ -45,3 +52,60 @@ jobs:
           name: PancakeClient-UI-previews
           path: artifacts/screenshots/
           if-no-files-found: error
+      - name: Package versioned update
+        shell: pwsh
+        run: |
+          $version = '0.1.${{ github.run_number }}.${{ github.run_attempt }}'
+          $tag = "v$version"
+          New-Item artifacts/release -ItemType Directory -Force | Out-Null
+          @{ Version = $version } | ConvertTo-Json | Set-Content artifacts/PancakeClient-win-x64/client-version.json
+          Compress-Archive -Path artifacts/PancakeClient-win-x64/* -DestinationPath artifacts/release/PancakeClient-win-x64.zip
+          $hash = (Get-FileHash artifacts/release/PancakeClient-win-x64.zip -Algorithm SHA256).Hash
+          @{ Version = $version; DownloadUrl = "https://github.com/${{ github.repository }}/releases/download/$tag/PancakeClient-win-x64.zip"; Sha256 = $hash } | ConvertTo-Json | Set-Content artifacts/release/update.json
+      - name: Verify updater helper and restarted app
+        shell: pwsh
+        run: |
+          $target = Join-Path $PWD 'artifacts/update-test'
+          New-Item $target -ItemType Directory -Force | Out-Null
+          Copy-Item artifacts/PancakeClient-win-x64/* $target -Recurse
+          Set-Content (Join-Path $target 'SETUP.md') 'old setup'
+          Set-Content (Join-Path $target 'personal.txt') 'keep me'
+          $helper = Start-Process (Join-Path $PWD 'artifacts/PancakeClient-win-x64/PancakeClient.exe') -ArgumentList @('--apply-update', '2147483647', $target) -PassThru
+          try {
+            if (-not $helper.WaitForExit(30000)) { throw 'Update helper timed out.' }
+            if ((Get-FileHash (Join-Path $target 'SETUP.md')).Hash -ne (Get-FileHash artifacts/PancakeClient-win-x64/SETUP.md).Hash) { throw 'Update did not replace files.' }
+            if ((Get-Content (Join-Path $target 'personal.txt') -Raw).Trim() -ne 'keep me') { throw 'Update changed a personal file.' }
+            $restarted = $null
+            for ($i = 0; $i -lt 15; $i++) {
+              $restarted = Get-Process PancakeClient -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq (Join-Path $target 'PancakeClient.exe') }
+              if ($restarted) { break }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $restarted) { throw 'Updated app did not restart.' }
+            Write-Host 'Updater replaced application files, preserved personal files, and restarted the updated app.'
+          } finally {
+            if (-not $helper.HasExited) { Stop-Process -Id $helper.Id -Force }
+            Get-Process PancakeClient -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq (Join-Path $target 'PancakeClient.exe') } | Stop-Process -Force
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: artifacts/release/
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release
+      - name: Publish automatic-update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          VERSION="0.1.${{ github.run_number }}.${{ github.run_attempt }}"
+          gh release create "v$VERSION" release/PancakeClient-win-x64.zip release/update.json --target '${{ github.sha }}' --title "Pancake Client $VERSION" --notes 'Windows desktop alpha. Includes automatic update checks and install/restart from Settings. Extract the entire ZIP. The optional BONELAB companion is built separately against your game installation.' --latest

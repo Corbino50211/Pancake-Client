@@ -10,6 +10,7 @@ using Pancake.Protocol;
 
 var checks = new List<(string Name, Func<Task> Run)>
 {
+    ("Update verification, preservation and rollback", Updates),
     ("Game executable detection and running-game guard", GameDetection),
     ("Inventory and reversible toggles", Inventory),
     ("Profile round trip, missing mods and rollback", Profiles),
@@ -47,6 +48,42 @@ static ClientSettings Fixture(string root)
     File.WriteAllText(Path.Combine(game, "Plugins", "Loader.dll"), "plugin");
     File.WriteAllText(Path.Combine(content, "ExampleAvatar", "pallet.json"), "{\"title\":\"Example Avatar\"}");
     return new() { GameDirectory = game, ContentDirectory = content };
+}
+static Task Updates()
+{
+    var root = Temp();
+    try
+    {
+        var stage = Path.Combine(root, "stage"); var target = Path.Combine(root, "target");
+        Directory.CreateDirectory(stage); Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "PancakeClient.exe"), "old");
+        File.WriteAllText(Path.Combine(target, "personal.txt"), "keep");
+        foreach (var name in new[] { "PancakeClient.exe", "PancakeClient.dll", "PancakeClient.runtimeconfig.json" }) File.WriteAllText(Path.Combine(stage, name), "new");
+        File.WriteAllText(Path.Combine(stage, "client-version.json"), "{\"Version\":\"0.1.2.1\"}");
+        var zip = Path.Combine(root, "update.zip"); ZipFile.CreateFromDirectory(stage, zip);
+        using var input = File.OpenRead(zip);
+        var update = new ClientUpdate("0.1.2.1", "https://github.com/Corbino50211/Pancake-Client/releases/download/v0.1.2.1/PancakeClient-win-x64.zip", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input)));
+        Require(ClientUpdater.IsNewer(update, "0.1.1.1"), "New update missed.");
+        Require(!ClientUpdater.IsNewer(update, update.Version), "Same version offered.");
+        Throws<InvalidDataException>(() => ClientUpdater.Validate(update with { DownloadUrl = "https://example.com/update.zip" }));
+        Throws<InvalidDataException>(() => ClientUpdater.Stage(zip, Path.Combine(root, "bad"), update with { Sha256 = new string('0', 64) }));
+        Require(!Directory.Exists(Path.Combine(root, "bad")), "Bad checksum extracted files.");
+        var verified = ClientUpdater.Stage(zip, Path.Combine(root, "verified"), update);
+        ClientUpdater.Apply(verified, target, Path.Combine(root, "backup"));
+        Require(File.ReadAllText(Path.Combine(target, "PancakeClient.exe")) == "new", "Update not installed.");
+        Require(File.ReadAllText(Path.Combine(target, "personal.txt")) == "keep", "Unrelated file changed.");
+        Require(File.ReadAllText(Path.Combine(root, "backup", "PancakeClient.exe")) == "old", "Backup missing.");
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllText(Path.Combine(stage, "a.txt"), "new a"); File.WriteAllText(Path.Combine(stage, "b.txt"), "new b");
+            File.WriteAllText(Path.Combine(target, "a.txt"), "old a"); File.WriteAllText(Path.Combine(target, "b.txt"), "old b");
+            using var locked = new FileStream(Path.Combine(target, "b.txt"), FileMode.Open, FileAccess.Read, FileShare.None);
+            Throws<IOException>(() => ClientUpdater.Apply(stage, target, Path.Combine(root, "rollback")));
+            Require(File.ReadAllText(Path.Combine(target, "a.txt")) == "old a", "Failed update did not restore previous files.");
+        }
+    }
+    finally { Directory.Delete(root, true); }
+    return Task.CompletedTask;
 }
 static Task GameDetection()
 {

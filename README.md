@@ -6,7 +6,9 @@
 
 ## Get the first build
 
-Open **[Actions → Windows build](https://github.com/Corbino50211/Pancake-Client/actions/workflows/windows-build.yml)**, select the latest successful run, and download **PancakeClient-win-x64** under Artifacts. Sign in to GitHub to download artifacts. Extract the entire ZIP and run `PancakeClient.exe`. This is a portable, self-contained Windows x64 app.
+Download the portable Windows ZIP from **[Releases](https://github.com/Corbino50211/Pancake-Client/releases/latest)**. Once installed, Pancake Client checks for updates at startup; install and restart from Settings.
+
+For CI artifacts, open **[Actions → Windows build](https://github.com/Corbino50211/Pancake-Client/actions/workflows/windows-build.yml)**, select the latest successful run, and download **PancakeClient-win-x64** under Artifacts. Sign in to GitHub to download artifacts. Extract the entire ZIP and run `PancakeClient.exe`. This is a portable, self-contained Windows x64 app.
 
 **[Setup guide](docs/SETUP.md) · [Camera & OBS guide](docs/OBS.md) · [Roadmap](docs/ROADMAP.md)**
 

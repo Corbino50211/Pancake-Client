@@ -83,3 +83,7 @@ Pancake Client stores settings and profile data in `%LOCALAPPDATA%\PancakeClient
 ## Validation boundary
 
 Automated checks cover inventory toggles, profile rollback, archive safety, content import, OBS authentication/response correlation/errors, and the companion named-pipe handshake. Windows CI compiles the desktop and launches a WPF smoke check. A human PCVR test is still required for the companion's game API compatibility, menu appearance, camera framing, capture performance, and interaction with other installed mods.
+
+## Desktop updates
+
+The client checks public GitHub Releases at startup. Settings → Client updates lets you check manually or disable startup checks. Choose Install update & restart while BONELAB is closed. The download is checked against its SHA-256 manifest before extraction. Settings and profiles stay in LocalAppData/PancakeClient; replaced application files are backed up in its updates/backups folder. Update failures are logged in update-errors.log. The companion and installed game mods are not updated by the desktop updater.

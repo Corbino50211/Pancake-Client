@@ -28,6 +28,8 @@ public partial class MainWindow : Window
     private BitmapSource? lastFrame;
     private Window? captureWindow;
     private Image? captureImage;
+    private ClientUpdate? availableUpdate;
+    private bool checkingUpdate;
     private bool ready, busy, polling, closing, canClose;
     private static string SettingsFile => Path.Combine(ClientStorage.Root, "settings.json");
     private static string ProfilesFolder => Path.Combine(ClientStorage.Root, "profiles");
@@ -65,6 +67,8 @@ public partial class MainWindow : Window
         bridge.Message += message => Ui(() => HandleCompanionMessage(message));
         obs.ConnectionChanged += status => Ui(() => { ObsStatus.Text = status; ObsHomeStatus.Text = obs.Connected ? "Connected" : "Offline"; });
         timer.Tick += async (_, _) => await PollAsync();
+        AutoUpdateCheck.IsChecked = settings.CheckForUpdates;
+        UpdateStatus.Text = "Installed: " + ClientUpdater.InstalledVersion(AppContext.BaseDirectory);
         ready = true;
         ShowPage(0);
     }
@@ -91,7 +95,40 @@ public partial class MainWindow : Window
         bridge.Start();
         timer.Start();
         await RunAsync(() => { RefreshMods(); RefreshProfiles(); return Task.CompletedTask; });
+        if (settings.CheckForUpdates && !Environment.GetCommandLineArgs().Contains("--smoke-test")) await CheckUpdateAsync();
     }
+    private void AutoUpdate_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!ready) return;
+        settings.CheckForUpdates = AutoUpdateCheck.IsChecked == true; Persist();
+    }
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e) => await CheckUpdateAsync();
+    private async Task CheckUpdateAsync()
+    {
+        if (checkingUpdate || closing) return;
+        checkingUpdate = true; UpdateStatus.Text = "Checking for updates…";
+        try
+        {
+            var update = await ClientUpdater.CheckAsync(closingToken.Token);
+            availableUpdate = update != null && ClientUpdater.IsNewer(update, ClientUpdater.InstalledVersion(AppContext.BaseDirectory)) ? update : null;
+            UpdateStatus.Text = availableUpdate != null ? "Update available: " + availableUpdate.Version : "You have the latest published build.";
+            InstallUpdateButton.IsEnabled = availableUpdate != null;
+            if (availableUpdate != null) StatusText.Text = "Pancake Client update available. Install it from Settings.";
+        }
+        catch (OperationCanceledException) { if (!closing) UpdateStatus.Text = "Update check timed out. Try again later."; }
+        catch (Exception ex) { UpdateStatus.Text = "Could not check for updates: " + ex.Message; }
+        finally { checkingUpdate = false; }
+    }
+    private async void InstallUpdate_Click(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (availableUpdate == null) return;
+        ModLibrary.RequireGameClosed();
+        if (MessageBox.Show("Install Pancake Client " + availableUpdate.Version + " and restart? Settings and profiles will be kept.", "Pancake Client update", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        UpdateStatus.Text = "Downloading and checking update…";
+        var stage = await ClientUpdater.DownloadAsync(availableUpdate, Path.Combine(ClientStorage.Root, "updates"), closingToken.Token);
+        ModLibrary.RequireGameClosed();
+        UpdateRunner.Start(stage); Close();
+    });
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (canClose) return;

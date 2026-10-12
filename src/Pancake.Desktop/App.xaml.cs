@@ -7,6 +7,12 @@ public partial class App : Application
     private Mutex? instance;
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.FirstOrDefault() == "--apply-update")
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = UpdateRunner.RunAsync(e.Args);
+            return;
+        }
         if (e.Args.Contains("--smoke-test"))
         {
             Directory.CreateDirectory("artifacts");
